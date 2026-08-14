@@ -1,8 +1,10 @@
 package com.bumpbot.flappy
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -12,6 +14,8 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.bumpbot.flappy.service.OverlayService
 import com.bumpbot.flappy.service.TapAccessibilityService
 
@@ -20,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val REQUEST_OVERLAY = 1001
         const val REQUEST_MEDIA_PROJECTION = 1002
+        const val REQUEST_NOTIFICATION = 1003
     }
 
     private lateinit var statusText: TextView
@@ -37,12 +42,27 @@ class MainActivity : AppCompatActivity() {
         btnStart.setOnClickListener { startBot() }
         btnAccessibility.setOnClickListener { openAccessibilitySettings() }
 
+        requestNotificationPermission()
         updateStatus()
     }
 
     override fun onResume() {
         super.onResume()
         updateStatus()
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    REQUEST_NOTIFICATION
+                )
+            }
+        }
     }
 
     private fun updateStatus() {

@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -53,6 +54,7 @@ class OverlayService : Service() {
 
     private lateinit var captureThread: HandlerThread
     private lateinit var captureHandler: Handler
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var screenWidth = 1080
     private var screenHeight = 2400
@@ -130,6 +132,17 @@ class OverlayService : Service() {
         val projectionManager =
             getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = projectionManager.getMediaProjection(resultCode, data)
+
+        if (Build.VERSION.SDK_INT >= 34) {
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    mainHandler.post {
+                        running = false
+                        try { tvStatus.text = "PROJECTION ENDED" } catch (_: Exception) {}
+                    }
+                }
+            }, mainHandler)
+        }
 
         val captureW = screenWidth / CAPTURE_SCALE
         val captureH = screenHeight / CAPTURE_SCALE
@@ -296,26 +309,33 @@ class OverlayService : Service() {
         }
         image ?: return null
 
-        val plane = image.planes[0]
-        val buffer = plane.buffer
-        val pixelStride = plane.pixelStride
-        val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * image.width
+        return try {
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val imgWidth = image.width
+            val imgHeight = image.height
+            val rowPadding = rowStride - pixelStride * imgWidth
 
-        val bmp = Bitmap.createBitmap(
-            image.width + rowPadding / pixelStride,
-            image.height,
-            Bitmap.Config.ARGB_8888
-        )
-        bmp.copyPixelsFromBuffer(buffer)
-        image.close()
+            val bmp = Bitmap.createBitmap(
+                imgWidth + rowPadding / pixelStride,
+                imgHeight,
+                Bitmap.Config.ARGB_8888
+            )
+            bmp.copyPixelsFromBuffer(buffer)
+            image.close()
 
-        return if (rowPadding > 0) {
-            val cropped = Bitmap.createBitmap(bmp, 0, 0, image.width, image.height)
-            bmp.recycle()
-            cropped
-        } else {
-            bmp
+            if (rowPadding > 0) {
+                val cropped = Bitmap.createBitmap(bmp, 0, 0, imgWidth, imgHeight)
+                bmp.recycle()
+                cropped
+            } else {
+                bmp
+            }
+        } catch (e: Exception) {
+            image.close()
+            null
         }
     }
 
