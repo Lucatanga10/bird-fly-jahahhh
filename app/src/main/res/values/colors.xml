@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bot_accent">#FF4CAF50</color>
+    <color name="bot_bg">#E61A1A2E</color>
+    <color name="bot_text">#FFFFFFFF</color>
+    <color name="bot_active">#FF00E676</color>
+    <color name="bot_inactive">#FFFF5252</color>
+</resources>
