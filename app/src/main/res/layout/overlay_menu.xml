@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlay_root"
+    android:layout_width="220dp"
+    android:layout_height="wrap_content"
+    android:background="@drawable/overlay_bg"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="BumpBot"
+        android:textColor="#4CAF50"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:text="IDLE"
+        android:textColor="#80FFFFFF"
+        android:textSize="11sp"
+        android:layout_marginBottom="10dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <Button
+            android:id="@+id/btn_play"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:backgroundTint="#4CAF50"
+            android:text="▶ START"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_stop"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:backgroundTint="#FF5252"
+            android:text="■ STOP"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:layout_marginStart="4dp" />
+
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btn_calibrate"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:backgroundTint="#2196F3"
+        android:text="Calibrate"
+        android:textColor="#FFFFFF"
+        android:textSize="11sp"
+        android:textAllCaps="false"
+        android:layout_marginTop="6dp" />
+
+    <Button
+        android:id="@+id/btn_close"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:backgroundTint="#444466"
+        android:text="Close"
+        android:textColor="#AAAAAA"
+        android:textSize="11sp"
+        android:textAllCaps="false"
+        android:layout_marginTop="4dp" />
+
+</LinearLayout>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BumpBot" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#4CAF50</item>
+        <item name="colorPrimaryVariant">#388E3C</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#1A1A2E</item>
+        <item name="android:statusBarColor">#1A1A2E</item>
+    </style>
+</resources>

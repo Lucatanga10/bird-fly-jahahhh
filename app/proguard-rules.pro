@@ -1,0 +1,2 @@
+-keep class com.bumpbot.flappy.service.TapAccessibilityService { *; }
+-keep class com.bumpbot.flappy.service.OverlayService { *; }
