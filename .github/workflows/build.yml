@@ -12,6 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug - list mipmap files
+        run: |
+          echo "=== Git commit ==="
+          git log --oneline -1
+          echo "=== Manifest icon lines ==="
+          grep -n "icon\|roundIcon" app/src/main/AndroidManifest.xml
+          echo "=== Mipmap files ==="
+          find app/src/main/res/mipmap* -type f 2>/dev/null || echo "NO MIPMAP DIRS"
+          echo "=== All res dirs ==="
+          ls -la app/src/main/res/
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
