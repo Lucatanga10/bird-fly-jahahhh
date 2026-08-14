@@ -45,8 +45,10 @@ class OverlayService : Service() {
     }
 
     private lateinit var windowManager: WindowManager
-    private lateinit var overlayView: View
-    private lateinit var params: WindowManager.LayoutParams
+
+    private var overlayView: View? = null
+    private var overlayParams: WindowManager.LayoutParams? = null
+    private var overlayAdded = false
 
     private var bubbleView: View? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
@@ -71,7 +73,7 @@ class OverlayService : Service() {
     private var frameCount = 0
     private var lastFpsTime = 0L
 
-    private lateinit var tvStatus: TextView
+    private var tvStatus: TextView? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -103,8 +105,11 @@ class OverlayService : Service() {
             }
         }
 
-        createOverlay()
-        createBubble()
+        if (!overlayAdded) {
+            createOverlay()
+            createBubble()
+        }
+
         return START_NOT_STICKY
     }
 
@@ -147,7 +152,7 @@ class OverlayService : Service() {
                 override fun onStop() {
                     mainHandler.post {
                         running = false
-                        try { tvStatus.text = "PROJECTION ENDED" } catch (_: Exception) {}
+                        tvStatus?.text = "PROJECTION ENDED"
                     }
                 }
             }, mainHandler)
@@ -172,26 +177,25 @@ class OverlayService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun createBubble() {
-        val size = (48 * resources.displayMetrics.density).toInt()
+        val density = resources.displayMetrics.density
+        val size = (48 * density).toInt()
 
-        val bubble = FrameLayout(this)
+        val container = FrameLayout(this)
+
         val circle = View(this)
         val bg = GradientDrawable()
         bg.shape = GradientDrawable.OVAL
         bg.setColor(Color.parseColor("#CC4CAF50"))
-        bg.setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#FFFFFF"))
+        bg.setStroke((2 * density).toInt(), Color.WHITE)
         circle.background = bg
-
-        val innerSize = size
-        val lp = FrameLayout.LayoutParams(innerSize, innerSize)
-        bubble.addView(circle, lp)
+        container.addView(circle, FrameLayout.LayoutParams(size, size))
 
         val label = TextView(this)
         label.text = "B"
         label.setTextColor(Color.WHITE)
         label.textSize = 18f
-        label.gravity = android.view.Gravity.CENTER
-        bubble.addView(label, FrameLayout.LayoutParams(innerSize, innerSize))
+        label.gravity = Gravity.CENTER
+        container.addView(label, FrameLayout.LayoutParams(size, size))
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -210,65 +214,59 @@ class OverlayService : Service() {
             y = screenHeight / 3
         }
 
-        var dragStartX = 0f
-        var dragStartY = 0f
-        var paramStartX = 0
-        var paramStartY = 0
-        var isDragging = false
+        var startX = 0f
+        var startY = 0f
+        var startPX = 0
+        var startPY = 0
+        var dragging = false
 
-        bubble.setOnTouchListener { _, event ->
+        container.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    dragStartX = event.rawX
-                    dragStartY = event.rawY
-                    paramStartX = bp.x
-                    paramStartY = bp.y
-                    isDragging = false
+                    startX = event.rawX
+                    startY = event.rawY
+                    startPX = bp.x
+                    startPY = bp.y
+                    dragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - dragStartX
-                    val dy = event.rawY - dragStartY
-                    if (dx * dx + dy * dy > 100) isDragging = true
-                    if (isDragging) {
-                        bp.x = paramStartX + dx.toInt()
-                        bp.y = paramStartY + dy.toInt()
-                        windowManager.updateViewLayout(bubble, bp)
+                    val dx = event.rawX - startX
+                    val dy = event.rawY - startY
+                    if (dx * dx + dy * dy > 200) dragging = true
+                    if (dragging) {
+                        bp.x = startPX + dx.toInt()
+                        bp.y = startPY + dy.toInt()
+                        try { windowManager.updateViewLayout(container, bp) } catch (_: Exception) {}
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!isDragging) {
-                        showMenu()
-                    }
+                    if (!dragging) showMenu()
                     true
                 }
                 else -> false
             }
         }
 
-        bubbleView = bubble
+        bubbleView = container
         bubbleParams = bp
 
-        windowManager.addView(bubble, bp)
+        windowManager.addView(container, bp)
         bubbleAdded = true
-        bubble.visibility = View.GONE
+        container.visibility = View.GONE
     }
 
     private fun showMenu() {
-        if (!menuVisible) {
-            overlayView.visibility = View.VISIBLE
-            bubbleView?.visibility = View.GONE
-            menuVisible = true
-        }
+        overlayView?.visibility = View.VISIBLE
+        bubbleView?.visibility = View.GONE
+        menuVisible = true
     }
 
     private fun hideMenu() {
-        if (menuVisible) {
-            overlayView.visibility = View.GONE
-            bubbleView?.visibility = View.VISIBLE
-            menuVisible = false
-        }
+        overlayView?.visibility = View.GONE
+        bubbleView?.visibility = View.VISIBLE
+        menuVisible = false
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -279,7 +277,7 @@ class OverlayService : Service() {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
 
-        params = WindowManager.LayoutParams(
+        val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
@@ -292,88 +290,91 @@ class OverlayService : Service() {
             y = 200
         }
 
-        overlayView = LayoutInflater.from(this).inflate(R.layout.overlay_menu, null)
-        tvStatus = overlayView.findViewById(R.id.tv_status)
+        overlayParams = lp
 
-        val btnPlay: Button = overlayView.findViewById(R.id.btn_play)
-        val btnStop: Button = overlayView.findViewById(R.id.btn_stop)
-        val btnCalibrate: Button = overlayView.findViewById(R.id.btn_calibrate)
-        val btnClose: Button = overlayView.findViewById(R.id.btn_close)
+        val view = LayoutInflater.from(this).inflate(R.layout.overlay_menu, null)
+        overlayView = view
+        tvStatus = view.findViewById(R.id.tv_status)
+
+        val btnPlay: Button = view.findViewById(R.id.btn_play)
+        val btnStop: Button = view.findViewById(R.id.btn_stop)
+        val btnCalibrate: Button = view.findViewById(R.id.btn_calibrate)
+        val btnClose: Button = view.findViewById(R.id.btn_close)
 
         btnPlay.setOnClickListener { startBot() }
         btnStop.setOnClickListener { stopBot() }
         btnCalibrate.setOnClickListener { calibrate() }
         btnClose.setOnClickListener { hideMenu() }
 
-        val root = overlayView.findViewById<View>(R.id.overlay_root)
-        var dragStartX = 0f
-        var dragStartY = 0f
-        var paramStartX = 0
-        var paramStartY = 0
-        var isDragging = false
+        val root = view.findViewById<View>(R.id.overlay_root)
+        setupDrag(root, lp, view)
 
-        root.setOnTouchListener { _, event ->
+        windowManager.addView(view, lp)
+        overlayAdded = true
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupDrag(handle: View, lp: WindowManager.LayoutParams, target: View) {
+        var startX = 0f
+        var startY = 0f
+        var startPX = 0
+        var startPY = 0
+        var dragging = false
+
+        handle.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    dragStartX = event.rawX
-                    dragStartY = event.rawY
-                    paramStartX = params.x
-                    paramStartY = params.y
-                    isDragging = false
+                    startX = event.rawX
+                    startY = event.rawY
+                    startPX = lp.x
+                    startPY = lp.y
+                    dragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - dragStartX
-                    val dy = event.rawY - dragStartY
-                    if (dx * dx + dy * dy > 100) isDragging = true
-                    if (isDragging) {
-                        params.x = paramStartX + dx.toInt()
-                        params.y = paramStartY + dy.toInt()
-                        windowManager.updateViewLayout(overlayView, params)
+                    val dx = event.rawX - startX
+                    val dy = event.rawY - startY
+                    if (dx * dx + dy * dy > 200) dragging = true
+                    if (dragging) {
+                        lp.x = startPX + dx.toInt()
+                        lp.y = startPY + dy.toInt()
+                        try { windowManager.updateViewLayout(target, lp) } catch (_: Exception) {}
                     }
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    isDragging
-                }
+                MotionEvent.ACTION_UP -> dragging
                 else -> false
             }
         }
-
-        windowManager.addView(overlayView, params)
     }
 
     private fun startBot() {
         if (running) return
         running = true
-        tvStatus.text = "RUNNING"
+        tvStatus?.text = "RUNNING"
         lastFpsTime = System.currentTimeMillis()
         frameCount = 0
-
         captureHandler.post(captureRunnable)
     }
 
     private fun stopBot() {
         running = false
-        tvStatus.text = "STOPPED"
+        tvStatus?.text = "STOPPED"
     }
 
     private fun calibrate() {
         bot.resetCalibration()
-
         captureHandler.post {
             val frame = grabFrame()
             if (frame != null) {
                 bot.calibrate(frame)
                 frame.recycle()
-                overlayView.post {
-                    tvStatus.text = "CALIBRATED"
-                    Toast.makeText(this, "Background sampled", Toast.LENGTH_SHORT).show()
+                mainHandler.post {
+                    tvStatus?.text = "CALIBRATED"
+                    Toast.makeText(this, "Ready", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                overlayView.post {
-                    tvStatus.text = "CAL FAILED — no frame"
-                }
+                mainHandler.post { tvStatus?.text = "CAL FAIL" }
             }
         }
     }
@@ -399,9 +400,9 @@ class OverlayService : Service() {
                     val fps = (frameCount * 1000f / elapsed).toInt()
                     frameCount = 0
                     lastFpsTime = now
-                    overlayView.post {
+                    mainHandler.post {
                         if (running) {
-                            tvStatus.text = "RUN | ${fps}fps | bird:${state.birdY} gap:${state.gapCenterY}"
+                            tvStatus?.text = "${fps}fps B:${state.birdY} G:${state.gapCenterY}"
                         }
                     }
                 }
@@ -460,8 +461,10 @@ class OverlayService : Service() {
         imageReader?.close()
         mediaProjection?.stop()
 
-        try { windowManager.removeView(overlayView) } catch (_: Exception) {}
+        try { if (overlayAdded) windowManager.removeView(overlayView) } catch (_: Exception) {}
         try { if (bubbleAdded) windowManager.removeView(bubbleView) } catch (_: Exception) {}
+        overlayAdded = false
+        bubbleAdded = false
 
         super.onDestroy()
     }
