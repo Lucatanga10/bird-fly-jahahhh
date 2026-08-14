@@ -8,7 +8,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -27,6 +29,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import com.bumpbot.flappy.R
@@ -45,12 +48,17 @@ class OverlayService : Service() {
     private lateinit var overlayView: View
     private lateinit var params: WindowManager.LayoutParams
 
+    private var bubbleView: View? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
+    private var bubbleAdded = false
+
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
 
     private val bot = FlappyBot()
     private var running = false
+    private var menuVisible = true
 
     private lateinit var captureThread: HandlerThread
     private lateinit var captureHandler: Handler
@@ -96,6 +104,7 @@ class OverlayService : Service() {
         }
 
         createOverlay()
+        createBubble()
         return START_NOT_STICKY
     }
 
@@ -162,6 +171,107 @@ class OverlayService : Service() {
     }
 
     @SuppressLint("ClickableViewAccessibility")
+    private fun createBubble() {
+        val size = (48 * resources.displayMetrics.density).toInt()
+
+        val bubble = FrameLayout(this)
+        val circle = View(this)
+        val bg = GradientDrawable()
+        bg.shape = GradientDrawable.OVAL
+        bg.setColor(Color.parseColor("#CC4CAF50"))
+        bg.setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#FFFFFF"))
+        circle.background = bg
+
+        val innerSize = size
+        val lp = FrameLayout.LayoutParams(innerSize, innerSize)
+        bubble.addView(circle, lp)
+
+        val label = TextView(this)
+        label.text = "B"
+        label.setTextColor(Color.WHITE)
+        label.textSize = 18f
+        label.gravity = android.view.Gravity.CENTER
+        bubble.addView(label, FrameLayout.LayoutParams(innerSize, innerSize))
+
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+
+        val bp = WindowManager.LayoutParams(
+            size, size, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = screenWidth - size - 20
+            y = screenHeight / 3
+        }
+
+        var dragStartX = 0f
+        var dragStartY = 0f
+        var paramStartX = 0
+        var paramStartY = 0
+        var isDragging = false
+
+        bubble.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragStartX = event.rawX
+                    dragStartY = event.rawY
+                    paramStartX = bp.x
+                    paramStartY = bp.y
+                    isDragging = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - dragStartX
+                    val dy = event.rawY - dragStartY
+                    if (dx * dx + dy * dy > 100) isDragging = true
+                    if (isDragging) {
+                        bp.x = paramStartX + dx.toInt()
+                        bp.y = paramStartY + dy.toInt()
+                        windowManager.updateViewLayout(bubble, bp)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!isDragging) {
+                        showMenu()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+
+        bubbleView = bubble
+        bubbleParams = bp
+
+        windowManager.addView(bubble, bp)
+        bubbleAdded = true
+        bubble.visibility = View.GONE
+    }
+
+    private fun showMenu() {
+        if (!menuVisible) {
+            overlayView.visibility = View.VISIBLE
+            bubbleView?.visibility = View.GONE
+            menuVisible = true
+        }
+    }
+
+    private fun hideMenu() {
+        if (menuVisible) {
+            overlayView.visibility = View.GONE
+            bubbleView?.visibility = View.VISIBLE
+            menuVisible = false
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
     private fun createOverlay() {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -193,7 +303,7 @@ class OverlayService : Service() {
         btnPlay.setOnClickListener { startBot() }
         btnStop.setOnClickListener { stopBot() }
         btnCalibrate.setOnClickListener { calibrate() }
-        btnClose.setOnClickListener { stopSelf() }
+        btnClose.setOnClickListener { hideMenu() }
 
         val root = overlayView.findViewById<View>(R.id.overlay_root)
         var dragStartX = 0f
@@ -290,7 +400,9 @@ class OverlayService : Service() {
                     frameCount = 0
                     lastFpsTime = now
                     overlayView.post {
-                        tvStatus.text = "RUN | ${fps}fps | bird:${state.birdY} gap:${state.gapCenterY}"
+                        if (running) {
+                            tvStatus.text = "RUN | ${fps}fps | bird:${state.birdY} gap:${state.gapCenterY}"
+                        }
                     }
                 }
 
@@ -348,9 +460,8 @@ class OverlayService : Service() {
         imageReader?.close()
         mediaProjection?.stop()
 
-        try {
-            windowManager.removeView(overlayView)
-        } catch (_: Exception) {}
+        try { windowManager.removeView(overlayView) } catch (_: Exception) {}
+        try { if (bubbleAdded) windowManager.removeView(bubbleView) } catch (_: Exception) {}
 
         super.onDestroy()
     }
