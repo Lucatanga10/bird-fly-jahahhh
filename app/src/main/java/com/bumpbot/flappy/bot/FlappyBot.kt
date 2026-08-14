@@ -2,6 +2,7 @@ package com.bumpbot.flappy.bot
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import kotlin.math.abs
 
 enum class BotAction { TAP, WAIT }
 
@@ -17,14 +18,15 @@ class FlappyBot {
 
     private var calibrated = false
     private var lastTapTime: Long = 0
-    private val minTapInterval: Long = 250
 
     private var prevBirdY: Int = -1
-    private var birdFalling = false
+    private var birdVelocity: Float = 0f
+    private var lastFrameTime: Long = 0
 
     fun calibrate(frame: Bitmap) {
         calibrated = true
         prevBirdY = -1
+        birdVelocity = 0f
     }
 
     fun analyze(frame: Bitmap): BotState {
@@ -33,24 +35,34 @@ class FlappyBot {
 
         if (!calibrated) calibrated = true
 
-        val gameTop = (h * 0.12f).toInt()
-        val gameBottom = (h * 0.82f).toInt()
+        val gameTop = (h * 0.10f).toInt()
+        val gameBottom = (h * 0.83f).toInt()
+        val gameHeight = gameBottom - gameTop
 
-        val birdY = findBird(frame, w, h, gameTop, gameBottom)
+        val birdY = findBird(frame, w, gameTop, gameBottom)
 
-        if (prevBirdY > 0 && birdY > 0) {
-            birdFalling = birdY > prevBirdY
+        val now = System.currentTimeMillis()
+        if (prevBirdY > 0 && lastFrameTime > 0) {
+            val dt = ((now - lastFrameTime).coerceAtLeast(1)).toFloat()
+            val rawVel = (birdY - prevBirdY) / dt
+            birdVelocity = birdVelocity * 0.6f + rawVel * 0.4f
         }
         prevBirdY = birdY
+        lastFrameTime = now
 
         val (gapCenter, pipeX) = findNextGap(frame, w, h, gameTop, gameBottom)
 
-        val action = decideAction(birdY, gapCenter, gameTop, gameBottom)
+        val pipeDistance = if (pipeX > 0) {
+            val birdX = (w * 0.20f).toInt()
+            (pipeX - birdX).toFloat() / w
+        } else 1.0f
+
+        val action = decideAction(birdY, gapCenter, gameTop, gameBottom, gameHeight, pipeDistance)
 
         return BotState(birdY, gapCenter, pipeX, action)
     }
 
-    private fun findBird(frame: Bitmap, w: Int, h: Int, gameTop: Int, gameBottom: Int): Int {
+    private fun findBird(frame: Bitmap, w: Int, gameTop: Int, gameBottom: Int): Int {
         val xStart = (w * 0.05f).toInt()
         val xEnd = (w * 0.40f).toInt()
 
@@ -59,19 +71,20 @@ class FlappyBot {
 
         var y = gameTop
         while (y < gameBottom) {
+            var rowHits = 0
             var x = xStart
             while (x < xEnd) {
-                val pixel = frame.getPixel(x, y)
-                if (isBirdColor(pixel)) {
-                    sumY += y
-                    count++
-                }
-                x += 3
+                if (isBirdColor(frame.getPixel(x, y))) rowHits++
+                x += 2
             }
-            y += 3
+            if (rowHits >= 2) {
+                sumY += y.toLong() * rowHits
+                count += rowHits
+            }
+            y += 2
         }
 
-        return if (count > 3) (sumY / count).toInt() else (gameTop + gameBottom) / 2
+        return if (count > 4) (sumY / count).toInt() else -1
     }
 
     private fun isBirdColor(pixel: Int): Boolean {
@@ -79,88 +92,102 @@ class FlappyBot {
         val g = Color.green(pixel)
         val b = Color.blue(pixel)
 
-        if (r > 200 && g > 170 && b < 80) return true
-        if (r > 180 && g > 140 && g < 200 && b < 60) return true
-        if (r > 220 && g > 100 && g < 170 && b < 60) return true
+        if (r > 200 && g > 160 && b < 90 && r > g) return true
+        if (r > 190 && g > 130 && b < 70 && r > g && g > b) return true
+        if (r > 210 && g > 90 && g < 180 && b < 70) return true
 
         return false
     }
 
     private fun findNextGap(frame: Bitmap, w: Int, h: Int, gameTop: Int, gameBottom: Int): Pair<Int, Int> {
-        val scanXStart = (w * 0.35f).toInt()
-        val scanXEnd = (w * 0.92f).toInt()
-        val step = 4
+        val scanXStart = (w * 0.30f).toInt()
+        val scanXEnd = (w * 0.95f).toInt()
 
-        var firstPipeX = -1
+        var closestPipeX = -1
+        var closestGapCenter = (gameTop + gameBottom) / 2
 
         var x = scanXStart
         while (x < scanXEnd) {
             val cx = x.coerceIn(0, w - 1)
-            var pipePixels = 0
-            var totalPixels = 0
 
-            var y = gameTop
-            while (y < gameBottom) {
-                if (isPipeColor(frame.getPixel(cx, y))) pipePixels++
-                totalPixels++
-                y += 3
-            }
+            val gapInfo = findGapInColumn(frame, cx, gameTop, gameBottom)
 
-            val ratio = pipePixels.toFloat() / totalPixels.coerceAtLeast(1)
-            if (ratio > 0.20f) {
-                firstPipeX = cx
+            if (gapInfo != null) {
+                closestPipeX = cx
+                closestGapCenter = gapInfo
+
+                var refinedSum = 0
+                var refinedCount = 0
+                for (offset in -4..4 step 2) {
+                    val rcx = (cx + offset).coerceIn(0, w - 1)
+                    val g = findGapInColumn(frame, rcx, gameTop, gameBottom)
+                    if (g != null) {
+                        refinedSum += g
+                        refinedCount++
+                    }
+                }
+                if (refinedCount > 0) closestGapCenter = refinedSum / refinedCount
+
                 break
             }
-            x += step
+            x += 3
         }
 
-        if (firstPipeX < 0) {
-            return Pair((gameTop + gameBottom) / 2, -1)
+        return Pair(closestGapCenter, closestPipeX)
+    }
+
+    private fun findGapInColumn(frame: Bitmap, x: Int, gameTop: Int, gameBottom: Int): Int? {
+        val cx = x.coerceIn(0, frame.width - 1)
+
+        var topPipeEnd = -1
+        var bottomPipeStart = -1
+
+        var y = gameTop
+        var inPipe = false
+        while (y < gameBottom) {
+            val pipe = isPipeColor(frame.getPixel(cx, y))
+            if (pipe && !inPipe) {
+                inPipe = true
+            } else if (!pipe && inPipe) {
+                topPipeEnd = y
+                break
+            }
+            y += 1
         }
 
-        var bestGapCenter = (gameTop + gameBottom) / 2
-        var bestGapSize = 0
+        if (topPipeEnd < 0) return null
 
-        val checkCols = mutableListOf(firstPipeX)
-        for (offset in listOf(-6, -3, 3, 6)) {
-            val col = (firstPipeX + offset).coerceIn(0, w - 1)
-            checkCols.add(col)
+        y = gameBottom
+        inPipe = false
+        while (y > topPipeEnd) {
+            val pipe = isPipeColor(frame.getPixel(cx, y.coerceIn(0, frame.height - 1)))
+            if (pipe && !inPipe) {
+                inPipe = true
+            } else if (!pipe && inPipe) {
+                bottomPipeStart = y
+                break
+            }
+            y -= 1
         }
 
-        for (col in checkCols) {
-            var longestGapStart = 0
-            var longestGapLen = 0
-            var curGapStart = -1
-            var curGapLen = 0
-
-            var y = gameTop
-            while (y < gameBottom) {
-                val pixel = frame.getPixel(col, y)
-                if (!isPipeColor(pixel)) {
-                    if (curGapStart < 0) curGapStart = y
-                    curGapLen++
-                } else {
-                    if (curGapLen > longestGapLen) {
-                        longestGapStart = curGapStart
-                        longestGapLen = curGapLen
-                    }
-                    curGapStart = -1
-                    curGapLen = 0
+        if (bottomPipeStart < 0) {
+            y = gameBottom - 1
+            while (y > topPipeEnd + 10) {
+                if (isPipeColor(frame.getPixel(cx, y.coerceIn(0, frame.height - 1)))) {
+                    bottomPipeStart = y
+                    break
                 }
-                y += 2
-            }
-            if (curGapLen > longestGapLen) {
-                longestGapStart = curGapStart
-                longestGapLen = curGapLen
-            }
-
-            if (longestGapLen > bestGapSize) {
-                bestGapSize = longestGapLen
-                bestGapCenter = longestGapStart + (longestGapLen * 2) / 2
+                y -= 1
             }
         }
 
-        return Pair(bestGapCenter, firstPipeX)
+        if (bottomPipeStart < 0) return null
+
+        val gapSize = bottomPipeStart - topPipeEnd
+        val minGap = (gameBottom - gameTop) * 0.08f
+        if (gapSize < minGap) return null
+
+        return topPipeEnd + gapSize / 2
     }
 
     private fun isPipeColor(pixel: Int): Boolean {
@@ -168,38 +195,64 @@ class FlappyBot {
         val g = Color.green(pixel)
         val b = Color.blue(pixel)
 
-        if (r > 140 && g > 80 && g < 180 && b < 120 && r > g && g > b) return true
-        if (r > 160 && g > 100 && b > 50 && b < 110 && r > g && (r - b) > 60) return true
-        if (r > 120 && g > 90 && b > 40 && b < 100 && r > b + 40) return true
+        if (r in 130..240 && g in 70..190 && b in 30..130 && r > g && g > b && (r - b) > 40) return true
+        if (r in 100..200 && g in 60..160 && b in 20..110 && r > b + 30) return true
 
         return false
     }
 
-    private fun decideAction(birdY: Int, targetY: Int, gameTop: Int, gameBottom: Int): BotAction {
+    private fun isGrassColor(pixel: Int): Boolean {
+        val r = Color.red(pixel)
+        val g = Color.green(pixel)
+        val b = Color.blue(pixel)
+        return g > r && g > b && g > 80
+    }
+
+    private fun decideAction(
+        birdY: Int, targetY: Int,
+        gameTop: Int, gameBottom: Int, gameHeight: Int,
+        pipeDistance: Float
+    ): BotAction {
         if (birdY < 0) return BotAction.WAIT
 
         val now = System.currentTimeMillis()
-        if (now - lastTapTime < minTapInterval) return BotAction.WAIT
 
-        val gameHeight = gameBottom - gameTop
+        val minInterval = if (pipeDistance < 0.15f) 150L else 200L
+        if (now - lastTapTime < minInterval) return BotAction.WAIT
 
-        if (birdY < gameTop + gameHeight * 0.08f) {
+        if (birdY < gameTop + gameHeight * 0.06f) {
             return BotAction.WAIT
         }
 
-        if (birdY > gameBottom - gameHeight * 0.10f) {
+        if (birdY > gameBottom - gameHeight * 0.08f) {
             lastTapTime = now
             return BotAction.TAP
         }
 
-        val margin = (gameHeight * 0.04f).toInt().coerceAtLeast(8)
+        val error = birdY - targetY
 
-        if (birdY > targetY + margin) {
+        val futureY = birdY + (birdVelocity * 120).toInt()
+        val futureError = futureY - targetY
+
+        val urgentMargin = (gameHeight * 0.06f).toInt()
+        val tapMargin = (gameHeight * 0.03f).toInt()
+
+        if (error > urgentMargin) {
             lastTapTime = now
             return BotAction.TAP
         }
 
-        if (birdY > targetY && birdFalling) {
+        if (error > tapMargin && birdVelocity >= 0) {
+            lastTapTime = now
+            return BotAction.TAP
+        }
+
+        if (futureError > urgentMargin && pipeDistance < 0.30f) {
+            lastTapTime = now
+            return BotAction.TAP
+        }
+
+        if (error > 0 && birdVelocity > 0.3f) {
             lastTapTime = now
             return BotAction.TAP
         }
@@ -212,5 +265,6 @@ class FlappyBot {
     fun resetCalibration() {
         calibrated = false
         prevBirdY = -1
+        birdVelocity = 0f
     }
 }

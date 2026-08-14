@@ -41,7 +41,7 @@ class OverlayService : Service() {
     companion object {
         private const val CHANNEL_ID = "bumpbot_channel"
         private const val NOTIF_ID = 1
-        private const val CAPTURE_SCALE = 4
+        private const val CAPTURE_SCALE = 2
     }
 
     private lateinit var windowManager: WindowManager
