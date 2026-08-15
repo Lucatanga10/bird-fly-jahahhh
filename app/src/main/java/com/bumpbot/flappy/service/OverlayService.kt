@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -85,23 +86,60 @@ class OverlayService : Service() {
         captureThread = HandlerThread("CaptureThread").also { it.start() }
         captureHandler = Handler(captureThread.looper)
 
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        windowManager.defaultDisplay.getRealMetrics(metrics)
-        screenWidth = metrics.widthPixels
-        screenHeight = metrics.heightPixels
-        screenDensity = metrics.densityDpi
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val bounds = wm.maximumWindowMetrics.bounds
+                screenWidth = bounds.width()
+                screenHeight = bounds.height()
+                screenDensity = resources.displayMetrics.densityDpi
+            } else {
+                val metrics = DisplayMetrics()
+                @Suppress("DEPRECATION")
+                windowManager.defaultDisplay.getRealMetrics(metrics)
+                screenWidth = metrics.widthPixels
+                screenHeight = metrics.heightPixels
+                screenDensity = metrics.densityDpi
+            }
+        } catch (e: Exception) {
+            screenWidth = resources.displayMetrics.widthPixels
+            screenHeight = resources.displayMetrics.heightPixels
+            screenDensity = resources.displayMetrics.densityDpi
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIF_ID, buildNotification())
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIF_ID,
+                    buildNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
+            } else {
+                startForeground(NOTIF_ID, buildNotification())
+            }
+        } catch (e: Exception) {
+            startForeground(NOTIF_ID, buildNotification())
+        }
 
         intent?.let {
             val resultCode = it.getIntExtra("resultCode", -1)
-            @Suppress("DEPRECATION")
-            val data = it.getParcelableExtra<Intent>("projectionData")
+            val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                it.getParcelableExtra("projectionData", Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                it.getParcelableExtra("projectionData")
+            }
             if (data != null) {
-                setupProjection(resultCode, data)
+                try {
+                    setupProjection(resultCode, data)
+                } catch (e: Exception) {
+                    mainHandler.post {
+                        tvStatus?.text = "PROJECTION ERROR"
+                        Toast.makeText(this, "Errore: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
 
@@ -147,6 +185,11 @@ class OverlayService : Service() {
             getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = projectionManager.getMediaProjection(resultCode, data)
 
+        if (mediaProjection == null) {
+            mainHandler.post { tvStatus?.text = "PROJECTION NULL" }
+            return
+        }
+
         if (Build.VERSION.SDK_INT >= 34) {
             mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
@@ -166,11 +209,13 @@ class OverlayService : Service() {
             PixelFormat.RGBA_8888, 2
         )
 
+        val surface = imageReader?.surface ?: return
+
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "BumpBotCapture",
             captureW, captureH, screenDensity / CAPTURE_SCALE,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader!!.surface,
+            surface,
             null, captureHandler
         )
     }
@@ -383,40 +428,49 @@ class OverlayService : Service() {
         override fun run() {
             if (!running) return
 
-            val frame = grabFrame()
-            if (frame != null) {
-                val state = bot.analyze(frame)
+            try {
+                val frame = grabFrame()
+                if (frame != null) {
+                    val state = bot.analyze(frame)
 
-                if (state.action == BotAction.TAP) {
-                    val tapX = screenWidth * 0.75f
-                    val tapY = screenHeight * 0.55f
-                    TapAccessibilityService.instance?.tap(tapX, tapY)
-                }
+                    if (state.action == BotAction.TAP) {
+                        val tapX = screenWidth * 0.75f
+                        val tapY = screenHeight * 0.55f
+                        TapAccessibilityService.instance?.tap(tapX, tapY)
+                    }
 
-                frameCount++
-                val now = System.currentTimeMillis()
-                val elapsed = now - lastFpsTime
-                if (elapsed >= 1000) {
-                    val fps = (frameCount * 1000f / elapsed).toInt()
-                    frameCount = 0
-                    lastFpsTime = now
-                    mainHandler.post {
-                        if (running) {
-                            tvStatus?.text = "${fps}fps B:${state.birdY} G:${state.gapCenterY} P:${state.pipeX}"
+                    frameCount++
+                    val now = System.currentTimeMillis()
+                    val elapsed = now - lastFpsTime
+                    if (elapsed >= 1000) {
+                        val fps = (frameCount * 1000f / elapsed).toInt()
+                        frameCount = 0
+                        lastFpsTime = now
+                        mainHandler.post {
+                            if (running) {
+                                tvStatus?.text = "${fps}fps B:${state.birdY} G:${state.gapCenterY} P:${state.pipeX}"
+                            }
                         }
                     }
-                }
 
-                frame.recycle()
+                    frame.recycle()
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    tvStatus?.text = "ERR: ${e.message?.take(30)}"
+                }
             }
 
-            captureHandler.postDelayed(this, 16)
+            if (running) {
+                captureHandler.postDelayed(this, 16)
+            }
         }
     }
 
     private fun grabFrame(): Bitmap? {
+        val reader = imageReader ?: return null
         val image: Image? = try {
-            imageReader?.acquireLatestImage()
+            reader.acquireLatestImage()
         } catch (e: Exception) {
             null
         }
@@ -447,7 +501,7 @@ class OverlayService : Service() {
                 bmp
             }
         } catch (e: Exception) {
-            image.close()
+            try { image.close() } catch (_: Exception) {}
             null
         }
     }
@@ -457,9 +511,9 @@ class OverlayService : Service() {
         captureHandler.removeCallbacksAndMessages(null)
         captureThread.quitSafely()
 
-        virtualDisplay?.release()
-        imageReader?.close()
-        mediaProjection?.stop()
+        try { virtualDisplay?.release() } catch (_: Exception) {}
+        try { imageReader?.close() } catch (_: Exception) {}
+        try { mediaProjection?.stop() } catch (_: Exception) {}
 
         try { if (overlayAdded) windowManager.removeView(overlayView) } catch (_: Exception) {}
         try { if (bubbleAdded) windowManager.removeView(bubbleView) } catch (_: Exception) {}
