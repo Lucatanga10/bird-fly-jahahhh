@@ -388,8 +388,8 @@ class OverlayService : Service() {
                 val state = bot.analyze(frame)
 
                 if (state.action == BotAction.TAP) {
-                    val tapX = screenWidth * 0.5f
-                    val tapY = screenHeight * 0.5f
+                    val tapX = screenWidth * 0.75f
+                    val tapY = screenHeight * 0.55f
                     TapAccessibilityService.instance?.tap(tapX, tapY)
                 }
 
@@ -402,7 +402,7 @@ class OverlayService : Service() {
                     lastFpsTime = now
                     mainHandler.post {
                         if (running) {
-                            tvStatus?.text = "${fps}fps B:${state.birdY} G:${state.gapCenterY}"
+                            tvStatus?.text = "${fps}fps B:${state.birdY} G:${state.gapCenterY} P:${state.pipeX}"
                         }
                     }
                 }
