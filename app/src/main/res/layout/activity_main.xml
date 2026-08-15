@@ -47,6 +47,28 @@
         android:layout_marginBottom="12dp" />
 
     <Button
+        android:id="@+id/btn_fix_samsung"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:backgroundTint="#FF9800"
+        android:text="Samsung: Sblocca Restrizioni"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textAllCaps="false"
+        android:layout_marginBottom="6dp" />
+
+    <Button
+        android:id="@+id/btn_security"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:backgroundTint="#666688"
+        android:text="Apri Sicurezza e Privacy"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textAllCaps="false"
+        android:layout_marginBottom="16dp" />
+
+    <Button
         android:id="@+id/btn_start"
         android:layout_width="match_parent"
         android:layout_height="56dp"
