@@ -27,34 +27,40 @@ class MainActivity : AppCompatActivity() {
         const val REQUEST_NOTIFICATION = 1003
     }
 
-    private lateinit var statusText: TextView
-    private lateinit var btnStart: Button
-    private lateinit var btnAccessibility: Button
-    private lateinit var btnFixSamsung: Button
-    private lateinit var btnSecurity: Button
+    private var statusText: TextView? = null
+    private var btnStart: Button? = null
+    private var btnAccessibility: Button? = null
+    private var btnFixSamsung: Button? = null
+    private var btnSecurity: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        try {
+            setContentView(R.layout.activity_main)
 
-        statusText = findViewById(R.id.status_text)
-        btnStart = findViewById(R.id.btn_start)
-        btnAccessibility = findViewById(R.id.btn_accessibility)
-        btnFixSamsung = findViewById(R.id.btn_fix_samsung)
-        btnSecurity = findViewById(R.id.btn_security)
+            statusText = findViewById(R.id.status_text)
+            btnStart = findViewById(R.id.btn_start)
+            btnAccessibility = findViewById(R.id.btn_accessibility)
+            btnFixSamsung = findViewById(R.id.btn_fix_samsung)
+            btnSecurity = findViewById(R.id.btn_security)
 
-        btnStart.setOnClickListener { startBot() }
-        btnAccessibility.setOnClickListener { openAccessibilitySettings() }
-        btnFixSamsung.setOnClickListener { openAppInfo() }
-        btnSecurity.setOnClickListener { openSecuritySettings() }
+            btnStart?.setOnClickListener { startBot() }
+            btnAccessibility?.setOnClickListener { openAccessibilitySettings() }
+            btnFixSamsung?.setOnClickListener { openAppInfo() }
+            btnSecurity?.setOnClickListener { openSecuritySettings() }
 
-        requestNotificationPermission()
-        updateStatus()
+            requestNotificationPermission()
+            updateStatus()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Errore init: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        updateStatus()
+        try {
+            updateStatus()
+        } catch (_: Exception) {}
     }
 
     private fun requestNotificationPermission() {
@@ -78,62 +84,85 @@ class MainActivity : AppCompatActivity() {
         val sb = StringBuilder()
         sb.appendLine(if (overlayOk) "● Overlay: OK" else "○ Overlay: da attivare")
         sb.appendLine(if (accessOk) "● Accessibility: OK" else "○ Accessibility: da attivare")
-        if (!accessOk) {
+
+        if (overlayOk && accessOk) {
+            sb.appendLine()
+            sb.appendLine("Tutto pronto! Premi Launch Bot")
+        } else if (!accessOk) {
             sb.appendLine()
             sb.appendLine("Samsung: premi il bottone arancione,")
             sb.appendLine("aspetta i 3 puntini in alto a destra,")
             sb.appendLine("poi 'Consenti impostazioni con restrizioni'")
         }
-        statusText.text = sb.toString()
+        statusText?.text = sb.toString()
 
-        btnStart.isEnabled = overlayOk
-        btnAccessibility.isEnabled = !accessOk
+        btnAccessibility?.isEnabled = !accessOk
 
         val showSamsungFix = !accessOk
-        btnFixSamsung.visibility = if (showSamsungFix) android.view.View.VISIBLE else android.view.View.GONE
-        btnSecurity.visibility = if (showSamsungFix) android.view.View.VISIBLE else android.view.View.GONE
+        btnFixSamsung?.visibility = if (showSamsungFix) android.view.View.VISIBLE else android.view.View.GONE
+        btnSecurity?.visibility = if (showSamsungFix) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun startBot() {
         if (!Settings.canDrawOverlays(this)) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            startActivityForResult(intent, REQUEST_OVERLAY)
+            try {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, REQUEST_OVERLAY)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Errore overlay: ${e.message}", Toast.LENGTH_LONG).show()
+            }
             return
         }
 
-        val projectionManager =
-            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        startActivityForResult(
-            projectionManager.createScreenCaptureIntent(),
-            REQUEST_MEDIA_PROJECTION
-        )
+        try {
+            val projectionManager =
+                getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            @Suppress("DEPRECATION")
+            startActivityForResult(
+                projectionManager.createScreenCaptureIntent(),
+                REQUEST_MEDIA_PROJECTION
+            )
+        } catch (e: Exception) {
+            Toast.makeText(this, "Errore proiezione: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun openAccessibilitySettings() {
-        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        Toast.makeText(this, "Attiva BumpBot nella lista", Toast.LENGTH_LONG).show()
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            Toast.makeText(this, "Attiva BumpBot nella lista", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Errore: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun openAppInfo() {
-        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = Uri.parse("package:$packageName")
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+            Toast.makeText(
+                this,
+                "Aspetta i 3 puntini ⋮ in alto a destra, poi 'Consenti impostazioni con restrizioni'",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Errore: ${e.message}", Toast.LENGTH_LONG).show()
         }
-        startActivity(intent)
-        Toast.makeText(
-            this,
-            "Aspetta i 3 puntini ⋮ in alto a destra, poi 'Consenti impostazioni con restrizioni'",
-            Toast.LENGTH_LONG
-        ).show()
     }
 
     private fun openSecuritySettings() {
         try {
             startActivity(Intent("android.settings.SECURITY_SETTINGS"))
         } catch (e: Exception) {
-            startActivity(Intent(Settings.ACTION_SETTINGS))
+            try {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            } catch (_: Exception) {}
         }
         Toast.makeText(
             this,
@@ -146,29 +175,33 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        when (requestCode) {
-            REQUEST_OVERLAY -> {
-                updateStatus()
-                if (Settings.canDrawOverlays(this)) {
-                    startBot()
+        try {
+            when (requestCode) {
+                REQUEST_OVERLAY -> {
+                    updateStatus()
+                    if (Settings.canDrawOverlays(this)) {
+                        startBot()
+                    }
+                }
+                REQUEST_MEDIA_PROJECTION -> {
+                    if (resultCode == Activity.RESULT_OK && data != null) {
+                        val intent = Intent(this, OverlayService::class.java).apply {
+                            putExtra("resultCode", resultCode)
+                            putExtra("projectionData", data)
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                        Toast.makeText(this, "Bot avviato — vai su Bump", Toast.LENGTH_SHORT)
+                            .show()
+                        moveTaskToBack(true)
+                    }
                 }
             }
-            REQUEST_MEDIA_PROJECTION -> {
-                if (resultCode == Activity.RESULT_OK && data != null) {
-                    val intent = Intent(this, OverlayService::class.java).apply {
-                        putExtra("resultCode", resultCode)
-                        putExtra("projectionData", data)
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(intent)
-                    } else {
-                        startService(intent)
-                    }
-                    Toast.makeText(this, "Bot avviato — vai su Bump", Toast.LENGTH_SHORT)
-                        .show()
-                    moveTaskToBack(true)
-                }
-            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Errore: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
